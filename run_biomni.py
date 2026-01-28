@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+"""
+Automated Biomni agent runner with configurable parameters
+Runs agent with different combinations of LLM models and temperatures.
+"""
+
+import sys
+from pathlib import Path
+from datetime import datetime
+import base64
+import re
+from itertools import count
+
+# Add current directory to path
+sys.path.append("./")
+
+from biomni.agent import A1
+from biomni.config import default_config
+
+# ============================================================================
+# CONFIGURATION SECTION - Modify these parameters
+# ============================================================================
+
+# Model name mapping dictionary (short_key: full_model_name)
+MODEL_NAMES = {
+    "s3.5": "claude-3-5-sonnet-20241022",
+    "s3.7": "claude-3-7-sonnet-20250219",
+    "s4": "claude-4-sonnet-latest",
+    "s4.5": "claude-sonnet-4-5-20250929",
+    "o4.5": "claude-opus-4-5-20251101",
+    "gem2": "gemini-2.0-flash-exp",
+    "gem3f": "gemini-3-flash-preview",
+    "gem3p": "gemini-3-pro-preview",
+    "gpt4o": "gpt-4o",
+    "gpt5": "gpt-5",
+    "grk4": "grok-4",
+}
+
+# Query configuration
+QUERY_FILE = "Rpt_Ds/query_05.txt"  # Path to query text file
+QUERY_ID = "q05"  # Short ID for output filename
+
+# LLM configurations (model_name: short_id)
+# This will be populated at runtime based on command-line arguments
+LLM_CONFIGS = {
+    #"claude-sonnet-4-5-20250929": "s4.5",
+    # "claude-opus-4-5-20251101": "o4.5",
+    # "gemini-3-flash-preview": "gem3f",
+    # "gpt-5": "gpt5",
+    # "grok-4": "grk4",
+    "gemini-3-pro-preview": "gem3p",  # Fixed: Gemini 3 models need "-preview" suffix
+
+}
+
+# Temperature values to test
+TEMPERATURES = [0.5,0.7, 0.9]
+
+# Time limit in seconds (150 minutes = 9000 seconds)
+TIMEOUT_SECONDS = 12000
+TIMEOUT_ID = "200m"  # Short ID for output filename
+
+# Data files to register with agent
+DATA_FILES = {
+    "Pathogenic_repeats": "Rpt_Ds/data/B_5UTR_Pathogenic_GCNs.txt",
+    "AG_Predicted_2x_expansion_1": "Rpt_Ds/data/B_5UTR_all_GCN_2xAG_epi.tsv",
+    "AG_Predicted_2x_expansion_2": "Rpt_Ds/data/B_5UTR_all_GCN_2xAG_exp.tsv",
+    "AG_Predicted_2x_expansion_3": "Rpt_Ds/data/B_5UTR_all_GCN_2xAG_splice.tsv",
+    "AG_Predicted_5x_expansion_1": "Rpt_Ds/data/B_5UTR_all_GCN_5xAG_epi.tsv",
+    "AG_Predicted_5x_expansion_2": "Rpt_Ds/data/B_5UTR_all_GCN_5xAG_exp.tsv",
+    "AG_Predicted_5x_expansion_3": "Rpt_Ds/data/B_5UTR_all_GCN_5xAG_splice.tsv",
+    "AG_Predicted_20x_expansion_1": "Rpt_Ds/data/B_5UTR_all_GCN_20xAG_epi.tsv",
+    "AG_Predicted_20x_expansion_2": "Rpt_Ds/data/B_5UTR_all_GCN_20xAG_exp.tsv",
+    "AG_Predicted_20x_expansion_3": "Rpt_Ds/data/B_5UTR_all_GCN_20xAG_splice.tsv",
+}
+
+# ============================================================================
+# END CONFIGURATION SECTION
+# ============================================================================
+
+
+def run_single_experiment(llm_name, llm_id, temperature, query_path, prompt):
+    """Run a single agent experiment with specified parameters."""
+    
+    # Configure agent
+    default_config.temperature = temperature
+    data_root = Path("./biomni_data_cache").resolve()
+    
+    print(f"\n{'='*80}")
+    print(f"Starting experiment: {QUERY_ID}_{llm_id}_Tmp{temperature}_{TIMEOUT_ID}")
+    print(f"LLM: {llm_name}")
+    print(f"Temperature: {temperature}")
+    print(f"Timeout: {TIMEOUT_SECONDS}s")
+    print(f"{'='*80}\n")
+    
+    try:
+        # Create output directory first
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        prefix = f"{QUERY_ID}_{llm_id}_Tmp{temperature}_{TIMEOUT_ID}_{timestamp}"
+        
+        log_dir = Path("Rpt_Ds/output") / prefix
+        log_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Change to output directory so all agent-generated files go there
+        import os
+        original_cwd = os.getcwd()
+        os.chdir(log_dir)
+        
+        try:
+            agent = A1(
+                path=str(data_root),
+                llm=llm_name,
+                timeout_seconds=TIMEOUT_SECONDS
+            )
+            
+            # Register data files (use absolute paths)
+            agent.add_data({
+                name: f"Custom dataset at {(Path(original_cwd) / path).resolve()}"
+                for name, path in DATA_FILES.items()
+            })
+            
+            # Run query
+            print("Starting agent query execution...")
+            log = agent.go(prompt)
+            print("Query execution complete\n")
+            
+            # Save raw trace (while still in log_dir)
+            print(f"Saving trace with {len(agent.log)} log entries...")
+            trace_path = Path(f"{prefix}.log")
+            trace_path.write_text("\n".join(agent.log), encoding="utf-8")
+            print(f"Wrote trace to {log_dir / trace_path}")
+            
+            # Generate markdown with images
+            markdown_content = agent._generate_markdown_content(include_images=True)
+            image_dir = Path("media")
+            image_dir.mkdir(parents=True, exist_ok=True)
+            
+            image_counter = count(1)
+            saved_images = []
+            
+            def store_data_uri(data_uri: str) -> str | None:
+                if not data_uri.startswith("data:image/") or "," not in data_uri:
+                    return None
+                _, encoded = data_uri.split(",", 1)
+                image_bytes = base64.b64decode(encoded)
+                idx = next(image_counter)
+                image_path = image_dir / f"plot_{idx}.png"
+                image_path.write_bytes(image_bytes)
+                saved_images.append(image_path)
+                return f"media/{image_path.name}"
+            
+            def replace_md_image(match):
+                rel_path = store_data_uri(match.group(2))
+                if rel_path is None:
+                    return "".join(match.groups())
+                return f"{match.group(1)}{rel_path}{match.group(3)}"
+            
+            def replace_html_image(match):
+                rel_path = store_data_uri(match.group(2))
+                if rel_path is None:
+                    return "".join(match.groups())
+                return f"{match.group(1)}{rel_path}{match.group(3)}"
+            
+            md_pattern = r'(!\[[^\]]*\]\()(data:image/[^)]+)(\))'
+            html_pattern = r'(src=["\'])(data:image/[^"\']+)(["\'])'
+            
+            markdown_content = re.sub(md_pattern, replace_md_image, markdown_content, flags=re.IGNORECASE)
+            markdown_content = re.sub(html_pattern, replace_html_image, markdown_content, flags=re.IGNORECASE)
+            
+            md_path = Path(f"{prefix}.md")
+            md_path.write_text(markdown_content, encoding="utf-8")
+            
+            print(f"Saved {len(saved_images)} image(s) to {log_dir / image_dir}")
+            print(f"Wrote markdown to {log_dir / md_path}")
+            print(f"\n✓ Experiment {prefix} completed successfully")
+            
+        finally:
+            # Always restore original directory
+            os.chdir(original_cwd)
+        
+        return True
+        
+    except Exception as e:
+        print(f"\n✗ Experiment failed with error: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Try to restore directory even on error
+        try:
+            import os
+            os.chdir(original_cwd)
+        except:
+            pass
+        
+        return False
+
+
+def main():
+    """Main function to run all experiment combinations."""
+    import argparse
+
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description="Run Biomni agent with specified model(s)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=f"""
+Available model keys:
+{chr(10).join(f'  {key:8} -> {value}' for key, value in MODEL_NAMES.items())}
+
+Examples:
+  python run_biomni.py s4.5           # Run with Sonnet 4.5
+  python run_biomni.py s4.5 o4.5      # Run with Sonnet 4.5 and Opus 4.5
+  python run_biomni.py gpt5           # Run with GPT-5
+"""
+    )
+    parser.add_argument(
+        'models',
+        nargs='*',
+        help='Model key(s) to run (e.g., s4.5, o4.5, gpt5). If not specified, uses LLM_CONFIGS.'
+    )
+
+    args = parser.parse_args()
+
+    # Determine which models to run
+    if args.models:
+        # Use models from command line
+        llm_configs = {}
+        for model_key in args.models:
+            if model_key not in MODEL_NAMES:
+                print(f"Error: Unknown model key '{model_key}'")
+                print(f"Available keys: {', '.join(MODEL_NAMES.keys())}")
+                sys.exit(1)
+            llm_configs[MODEL_NAMES[model_key]] = model_key
+    else:
+        # Use default LLM_CONFIGS
+        llm_configs = LLM_CONFIGS
+
+    # Load query
+    query_path = Path(QUERY_FILE)
+    if not query_path.exists():
+        print(f"Error: Query file not found: {QUERY_FILE}")
+        sys.exit(1)
+
+    prompt = query_path.read_text(encoding="utf-8")
+
+    # Calculate total experiments
+    total_experiments = len(llm_configs) * len(TEMPERATURES)
+    current_experiment = 0
+    successful = 0
+    failed = 0
+
+    print(f"\n{'='*80}")
+    print(f"BIOMNI BATCH EXPERIMENT RUNNER")
+    print(f"{'='*80}")
+    print(f"Query: {QUERY_FILE} ({QUERY_ID})")
+    print(f"LLMs: {len(llm_configs)} models - {', '.join(llm_configs.values())}")
+    print(f"Temperatures: {TEMPERATURES}")
+    print(f"Timeout: {TIMEOUT_SECONDS}s ({TIMEOUT_ID})")
+    print(f"Total experiments: {total_experiments}")
+    print(f"{'='*80}\n")
+
+    # Run all combinations
+    for llm_name, llm_id in llm_configs.items():
+        for temperature in TEMPERATURES:
+            current_experiment += 1
+            print(f"\n[{current_experiment}/{total_experiments}] ", end="")
+
+            success = run_single_experiment(llm_name, llm_id, temperature, query_path, prompt)
+
+            if success:
+                successful += 1
+            else:
+                failed += 1
+
+    # Summary
+    print(f"\n{'='*80}")
+    print(f"BATCH COMPLETION SUMMARY")
+    print(f"{'='*80}")
+    print(f"Total experiments: {total_experiments}")
+    print(f"Successful: {successful}")
+    print(f"Failed: {failed}")
+    print(f"{'='*80}\n")
+
+
+if __name__ == "__main__":
+    main()

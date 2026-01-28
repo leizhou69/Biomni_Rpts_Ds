@@ -6,7 +6,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 if TYPE_CHECKING:
     from biomni.config import BiomniConfig
 
-SourceType = Literal["OpenAI", "AzureOpenAI", "Anthropic", "Ollama", "Gemini", "Bedrock", "Groq", "Custom"]
+SourceType = Literal["OpenAI", "AzureOpenAI", "Anthropic", "Ollama", "Gemini", "Bedrock", "Groq", "xAI", "Custom"]
 ALLOWED_SOURCES: set[str] = set(SourceType.__args__)
 
 
@@ -18,6 +18,7 @@ def get_llm(
     base_url: str | None = None,
     api_key: str | None = None,
     config: Optional["BiomniConfig"] = None,
+    timeout: int | None = None,
 ) -> BaseChatModel:
     """
     Get a language model instance based on the specified model name and source.
@@ -31,6 +32,7 @@ def get_llm(
         base_url (str): The base URL for custom model serving (e.g., "http://localhost:8000/v1"), default is None
         api_key (str): The API key for the custom llm
         config (BiomniConfig): Optional configuration object. If provided, unspecified parameters will use config values
+        timeout (int): Request timeout in seconds. If None, uses config.timeout_seconds or default of 600.
     """
     # Use config values for any unspecified parameters
     if config is not None:
@@ -44,6 +46,8 @@ def get_llm(
             base_url = config.base_url
         if api_key is None:
             api_key = config.api_key or "EMPTY"
+        if timeout is None:
+            timeout = config.timeout_seconds
 
     # Use defaults if still not specified
     if model is None:
@@ -52,6 +56,8 @@ def get_llm(
         temperature = 0.7
     if api_key is None:
         api_key = "EMPTY"
+    if timeout is None:
+        timeout = 600  # Default 10 minute timeout
     # Auto-detect source from model name if not specified
     if source is None:
         env_source = os.getenv("LLM_SOURCE")
@@ -68,6 +74,8 @@ def get_llm(
                 source = "AzureOpenAI"
             elif model[:7] == "gemini-":
                 source = "Gemini"
+            elif model.startswith("grok-"):
+                source = "xAI"
             elif "groq" in model.lower():
                 source = "Groq"
             elif base_url is not None:
@@ -207,6 +215,8 @@ def get_llm(
             api_key=os.getenv("GEMINI_API_KEY"),
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             stop_sequences=stop_sequences,
+            timeout=timeout,  # Use configurable timeout to prevent infinite hangs
+            max_retries=2,  # Retry failed requests up to 2 times
         )
 
     elif source == "Groq":
@@ -222,6 +232,21 @@ def get_llm(
             api_key=os.getenv("GROQ_API_KEY"),
             base_url="https://api.groq.com/openai/v1",
             stop_sequences=stop_sequences,
+        )
+
+    elif source == "xAI":
+        try:
+            from langchain_openai import ChatOpenAI
+        except ImportError:
+            raise ImportError(  # noqa: B904
+                "langchain-openai package is required for xAI models. Install with: pip install langchain-openai"
+            )
+        # Note: grok-4 does not support 'stop' parameter, so we don't pass stop_sequences
+        return ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            api_key=os.getenv("XAI_API_KEY"),
+            base_url="https://api.x.ai/v1",
         )
 
     elif source == "Ollama":
