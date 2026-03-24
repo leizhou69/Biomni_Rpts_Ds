@@ -4,6 +4,7 @@ Automated Biomni agent runner with configurable parameters
 Runs agent with different combinations of LLM models and temperatures.
 """
 
+import os
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -27,13 +28,16 @@ MODEL_NAMES = {
     "s3.7": "claude-3-7-sonnet-20250219",
     "s4": "claude-4-sonnet-latest",
     "s4.5": "claude-sonnet-4-5-20250929",
+    "s4.6": "claude-sonnet-4-6-20260401",
     "o4.5": "claude-opus-4-5-20251101",
     "gem2": "gemini-2.0-flash-exp",
     "gem3f": "gemini-3-flash-preview",
     "gem3p": "gemini-3-pro-preview",
     "gpt4o": "gpt-4o",
     "gpt5": "gpt-5",
+    "gpt5.2": "gpt-5.2",
     "grk4": "grok-4",
+    "o4.6": "claude-opus-4-6-20260401",
 }
 
 # Query configuration
@@ -41,7 +45,7 @@ QUERY_FILE = "Rpt_Ds/query_05.txt"  # Path to query text file
 QUERY_ID = "q05"  # Short ID for output filename
 
 # LLM configurations (model_name: short_id)
-# This will be populated at runtime based on command-line arguments
+# Used as fallback when no models are specified on the command line
 LLM_CONFIGS = {
     #"claude-sonnet-4-5-20250929": "s4.5",
     # "claude-opus-4-5-20251101": "o4.5",
@@ -55,7 +59,7 @@ LLM_CONFIGS = {
 # Temperature values to test
 TEMPERATURES = [0.5,0.7, 0.9]
 
-# Time limit in seconds (150 minutes = 9000 seconds)
+# Time limit in seconds (200 minutes = 12000 seconds)
 TIMEOUT_SECONDS = 12000
 TIMEOUT_ID = "200m"  # Short ID for output filename
 
@@ -78,7 +82,7 @@ DATA_FILES = {
 # ============================================================================
 
 
-def run_single_experiment(llm_name, llm_id, temperature, query_path, prompt):
+def run_single_experiment(llm_name, llm_id, temperature, query_path, prompt, output_dir="Rpt_Ds/output"):
     """Run a single agent experiment with specified parameters."""
     
     # Configure agent
@@ -97,11 +101,10 @@ def run_single_experiment(llm_name, llm_id, temperature, query_path, prompt):
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         prefix = f"{QUERY_ID}_{llm_id}_Tmp{temperature}_{TIMEOUT_ID}_{timestamp}"
         
-        log_dir = Path("Rpt_Ds/output") / prefix
+        log_dir = Path(output_dir) / prefix
         log_dir.mkdir(parents=True, exist_ok=True)
         
         # Change to output directory so all agent-generated files go there
-        import os
         original_cwd = os.getcwd()
         os.chdir(log_dir)
         
@@ -120,7 +123,7 @@ def run_single_experiment(llm_name, llm_id, temperature, query_path, prompt):
             
             # Run query
             print("Starting agent query execution...")
-            log = agent.go(prompt)
+            agent.go(prompt)
             print("Query execution complete\n")
             
             # Save raw trace (while still in log_dir)
@@ -186,7 +189,6 @@ def run_single_experiment(llm_name, llm_id, temperature, query_path, prompt):
         
         # Try to restore directory even on error
         try:
-            import os
             os.chdir(original_cwd)
         except:
             pass
@@ -216,6 +218,11 @@ Examples:
         'models',
         nargs='*',
         help='Model key(s) to run (e.g., s4.5, o4.5, gpt5). If not specified, uses LLM_CONFIGS.'
+    )
+    parser.add_argument(
+        '--output-dir',
+        default='Rpt_Ds/output',
+        help='Base output directory for experiment folders (default: Rpt_Ds/output).'
     )
 
     args = parser.parse_args()
@@ -252,6 +259,7 @@ Examples:
     print(f"BIOMNI BATCH EXPERIMENT RUNNER")
     print(f"{'='*80}")
     print(f"Query: {QUERY_FILE} ({QUERY_ID})")
+    print(f"Output dir: {args.output_dir}")
     print(f"LLMs: {len(llm_configs)} models - {', '.join(llm_configs.values())}")
     print(f"Temperatures: {TEMPERATURES}")
     print(f"Timeout: {TIMEOUT_SECONDS}s ({TIMEOUT_ID})")
@@ -264,7 +272,7 @@ Examples:
             current_experiment += 1
             print(f"\n[{current_experiment}/{total_experiments}] ", end="")
 
-            success = run_single_experiment(llm_name, llm_id, temperature, query_path, prompt)
+            success = run_single_experiment(llm_name, llm_id, temperature, query_path, prompt, args.output_dir)
 
             if success:
                 successful += 1
