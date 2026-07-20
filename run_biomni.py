@@ -81,16 +81,11 @@ TIMEOUT_ID = "200m"  # Short ID for output filename
 
 # Data files to register with agent
 DATA_FILES = {
-    "Pathogenic_repeats": "Rpt_Ds/data/B_5UTR_Pathogenic_GCNs.txt",
-    "AG_Predicted_2x_expansion_1": "Rpt_Ds/data/B_5UTR_all_GCN_2xAG_epi.tsv",
-    "AG_Predicted_2x_expansion_2": "Rpt_Ds/data/B_5UTR_all_GCN_2xAG_exp.tsv",
-    "AG_Predicted_2x_expansion_3": "Rpt_Ds/data/B_5UTR_all_GCN_2xAG_splice.tsv",
-    "AG_Predicted_5x_expansion_1": "Rpt_Ds/data/B_5UTR_all_GCN_5xAG_epi.tsv",
-    "AG_Predicted_5x_expansion_2": "Rpt_Ds/data/B_5UTR_all_GCN_5xAG_exp.tsv",
-    "AG_Predicted_5x_expansion_3": "Rpt_Ds/data/B_5UTR_all_GCN_5xAG_splice.tsv",
-    "AG_Predicted_20x_expansion_1": "Rpt_Ds/data/B_5UTR_all_GCN_20xAG_epi.tsv",
-    "AG_Predicted_20x_expansion_2": "Rpt_Ds/data/B_5UTR_all_GCN_20xAG_exp.tsv",
-    "AG_Predicted_20x_expansion_3": "Rpt_Ds/data/B_5UTR_all_GCN_20xAG_splice.tsv",
+    "Pathogenic_repeats": "Rpt_Ds/data/5UTR/B_5UTR_Pathogenic_GCN.txt",
+    "All_5UTR_GCN_catalog": "Rpt_Ds/data/5UTR/B_Cat_5UTR_GCNs_masked.tsv",
+    "AG_Predicted_2x_expansion": "Rpt_Ds/data/5UTR/B_5UTR_all_GCN_2xAG.tsv",
+    "AG_Predicted_5x_expansion": "Rpt_Ds/data/5UTR/B_5UTR_all_GCN_5xAG.tsv",
+    "AG_Predicted_20x_expansion": "Rpt_Ds/data/5UTR/B_5UTR_all_GCN_20xAG.tsv",
 }
 
 # ============================================================================

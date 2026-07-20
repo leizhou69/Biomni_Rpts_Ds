@@ -69,10 +69,12 @@ the model-name prefix in `biomni/llm.py::get_llm`.
    *resolved* fine on the API — the only error was `temperature`, so the model
    ID is valid; do not "fix" it back to sonnet-4-6.
 
-2. **`max_tokens=8192` is hardcoded** in `biomni/llm.py` (Anthropic + Custom
-   branches). Opus 4.8 supports up to 128K output (streaming). For long
-   analytical deliverables 8K can truncate a response; bump it if you see
-   `stop_reason: max_tokens` / cut-off notebooks.
+2. **`max_tokens` is hardcoded** in `biomni/llm.py`: the Anthropic branch is set
+   to **32000**; the Custom (SGLang) branch is still 8192. Opus 4.8 supports up
+   to 128K output (streaming). If long analytical deliverables still truncate
+   (`stop_reason: max_tokens` / cut-off notebooks), raise the Anthropic value
+   further — note the SDK requires streaming above ~16K, which this call path
+   does not currently use.
 
 3. **S3 data-lake 403s (resolved).** Older runs logged repeated
    `403 Client Error: Forbidden … biomni-release.s3.amazonaws.com/data_lake/…`.

@@ -210,7 +210,7 @@ def get_llm(
         # with a 400 error, so only pass temperature to models that still accept it.
         anthropic_kwargs = dict(
             model=model,
-            max_tokens=8192,
+            max_tokens=32000,
             stop_sequences=stop_sequences,
         )
         if _anthropic_rejects_sampling_params(model):
