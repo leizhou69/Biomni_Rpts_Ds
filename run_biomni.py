@@ -17,6 +17,17 @@ sys.path.append("./")
 
 from biomni.agent import A1
 from biomni.config import default_config
+from biomni.llm import _anthropic_rejects_sampling_params
+
+
+def _model_ignores_temperature(model_name: str) -> bool:
+    """Whether sweeping temperature is meaningless for this model.
+
+    Newer Anthropic models (Opus 4.7+, Sonnet 5+) reject temperature outright,
+    and gpt-5* models have it dropped from the request in biomni/llm.py. For
+    these, all temperature values produce identical runs, so we run only once.
+    """
+    return _anthropic_rejects_sampling_params(model_name) or model_name.startswith("gpt-5")
 
 # ============================================================================
 # CONFIGURATION SECTION - Modify these parameters
@@ -28,7 +39,8 @@ MODEL_NAMES = {
     "s3.7": "claude-3-7-sonnet-20250219",
     "s4": "claude-4-sonnet-latest",
     "s4.5": "claude-sonnet-4-5-20250929",
-    "s4.6": "claude-sonnet-4-6-20260401",
+    "s4.6": "claude-sonnet-4-6",
+    "s5": "claude-sonnet-5",
     "o4.5": "claude-opus-4-5-20251101",
     "gem2": "gemini-2.0-flash-exp",
     "gem3f": "gemini-3-flash-preview",
@@ -36,13 +48,15 @@ MODEL_NAMES = {
     "gpt4o": "gpt-4o",
     "gpt5": "gpt-5",
     "gpt5.2": "gpt-5.2",
+    "gpt5.4": "gpt-5.4",
     "grk4": "grok-4",
-    "o4.6": "claude-opus-4-6-20260401",
+    "o4.6": "claude-opus-4-6",
+    "o4.8": "claude-opus-4-8",
 }
 
 # Query configuration
-QUERY_FILE = "Rpt_Ds/query_05.txt"  # Path to query text file
-QUERY_ID = "q05"  # Short ID for output filename
+QUERY_FILE = "Rpt_Ds/query_05_b.txt"  # Path to query text file
+QUERY_ID = "q05b"  # Short ID for output filename
 
 # LLM configurations (model_name: short_id)
 # Used as fallback when no models are specified on the command line
@@ -52,8 +66,10 @@ LLM_CONFIGS = {
     # "gemini-3-flash-preview": "gem3f",
     # "gpt-5": "gpt5",
     # "grok-4": "grk4",
-    "gemini-3-pro-preview": "gem3p",  # Fixed: Gemini 3 models need "-preview" suffix
-
+    # "gemini-3-pro-preview": "gem3p",  # Fixed: Gemini 3 models need "-preview" suffix
+    # "claude-sonnet-4-6": "s4.6",
+    "claude-sonnet-5": "s5",
+    "claude-opus-4-8": "o4.8",
 }
 
 # Temperature values to test
@@ -224,6 +240,14 @@ Examples:
         default='Rpt_Ds/output',
         help='Base output directory for experiment folders (default: Rpt_Ds/output).'
     )
+    parser.add_argument(
+        '--temperatures',
+        nargs='+',
+        type=float,
+        default=None,
+        metavar='T',
+        help='Temperatures to run (e.g., --temperatures 0.9). Defaults to all temperatures in TEMPERATURES.'
+    )
 
     args = parser.parse_args()
 
@@ -241,6 +265,9 @@ Examples:
         # Use default LLM_CONFIGS
         llm_configs = LLM_CONFIGS
 
+    # Apply temperature filter if specified
+    temperatures = args.temperatures if args.temperatures else TEMPERATURES
+
     # Load query
     query_path = Path(QUERY_FILE)
     if not query_path.exists():
@@ -249,8 +276,11 @@ Examples:
 
     prompt = query_path.read_text(encoding="utf-8")
 
-    # Calculate total experiments
-    total_experiments = len(llm_configs) * len(TEMPERATURES)
+    # Calculate total experiments (models that ignore temperature run only once)
+    total_experiments = sum(
+        1 if _model_ignores_temperature(llm_name) else len(temperatures)
+        for llm_name in llm_configs
+    )
     current_experiment = 0
     successful = 0
     failed = 0
@@ -261,14 +291,21 @@ Examples:
     print(f"Query: {QUERY_FILE} ({QUERY_ID})")
     print(f"Output dir: {args.output_dir}")
     print(f"LLMs: {len(llm_configs)} models - {', '.join(llm_configs.values())}")
-    print(f"Temperatures: {TEMPERATURES}")
+    print(f"Temperatures: {temperatures}")
     print(f"Timeout: {TIMEOUT_SECONDS}s ({TIMEOUT_ID})")
     print(f"Total experiments: {total_experiments}")
     print(f"{'='*80}\n")
 
     # Run all combinations
     for llm_name, llm_id in llm_configs.items():
-        for temperature in TEMPERATURES:
+        # Models that ignore temperature run once at the first requested value
+        if _model_ignores_temperature(llm_name):
+            model_temps = temperatures[:1]
+            print(f"\nNote: '{llm_name}' ignores temperature; running once at {model_temps[0]}.")
+        else:
+            model_temps = temperatures
+
+        for temperature in model_temps:
             current_experiment += 1
             print(f"\n[{current_experiment}/{total_experiments}] ", end="")
 

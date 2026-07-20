@@ -10,6 +10,23 @@ SourceType = Literal["OpenAI", "AzureOpenAI", "Anthropic", "Ollama", "Gemini", "
 ALLOWED_SOURCES: set[str] = set(SourceType.__args__)
 
 
+def _anthropic_rejects_sampling_params(model: str) -> bool:
+    """Whether an Anthropic model rejects sampling params (temperature/top_p/top_k).
+
+    Newer Anthropic models (Opus 4.7+, Sonnet 5+) removed these parameters and
+    return HTTP 400 ("`temperature` is deprecated for this model.") if they are
+    sent. Older models (Sonnet 4.6, Opus 4.6 and earlier) still accept them.
+    """
+    m = model.lower()
+    unsupported_prefixes = (
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-opus-5",
+        "claude-sonnet-5",
+    )
+    return any(m.startswith(prefix) for prefix in unsupported_prefixes)
+
+
 def get_llm(
     model: str | None = None,
     temperature: float | None = None,
@@ -189,12 +206,18 @@ def get_llm(
             except Exception as e:
                 print(f"Note: Could not load ANTHROPIC_API_KEY from bash_profile: {e}")
 
-        return ChatAnthropic(
+        # Newer Anthropic models (Opus 4.7+, Sonnet 5+) reject temperature/top_p/top_k
+        # with a 400 error, so only pass temperature to models that still accept it.
+        anthropic_kwargs = dict(
             model=model,
-            temperature=temperature,
             max_tokens=8192,
             stop_sequences=stop_sequences,
         )
+        if _anthropic_rejects_sampling_params(model):
+            print(f"Note: model '{model}' does not accept 'temperature'; omitting it.")
+        else:
+            anthropic_kwargs["temperature"] = temperature
+        return ChatAnthropic(**anthropic_kwargs)
 
     elif source == "Gemini":
         # If you want to use ChatGoogleGenerativeAI, you need to pass the stop sequences upon invoking the model.
