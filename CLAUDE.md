@@ -74,13 +74,18 @@ the model-name prefix in `biomni/llm.py::get_llm`.
    analytical deliverables 8K can truncate a response; bump it if you see
    `stop_reason: max_tokens` / cut-off notebooks.
 
-3. **S3 data-lake downloads 403.** The last run logged repeated
-   `403 Client Error: Forbidden … https://biomni-release.s3.amazonaws.com/data_lake/…`
-   during `A1` init (`biomni/agent/a1.py::check_and_download_s3_files`). The run
-   proceeded because the **custom** `DATA_FILES` register from local absolute
-   paths, but any tool needing the standard Biomni data lake will be missing
-   inputs. Investigate bucket permissions/region, or pre-seed
-   `./biomni_data_cache/biomni_data/data_lake/` and pass `load_datalake=False`.
+3. **S3 data-lake 403s (resolved).** Older runs logged repeated
+   `403 Client Error: Forbidden … biomni-release.s3.amazonaws.com/data_lake/…`.
+   The real Biomni data lake is already complete locally (76/76 files at
+   `./biomni_data_cache/biomni_data/data_lake`), so those 403s were **not** the
+   real lake failing — `add_data` writes each custom dataset into the cached
+   `biomni.env_desc.data_lake_dict`, which is shared across every `A1()` in the
+   process, so later experiments in the same run tried to download the custom
+   `DATA_FILES` names from S3 (→ 403) before re-registering them locally. Fixed
+   by passing `expected_data_lake_files=<local files>` to `A1()` in
+   `run_biomni.py`, which makes A1 skip **all** S3 downloads and use the local
+   lake (fully offline). If you point `data_root` at a different local lake,
+   ensure it holds all 76 files listed in `biomni/env_desc.py::data_lake_dict`.
 
 4. **Working-directory side effect.** `run_single_experiment` does
    `os.chdir(log_dir)` so agent-generated files land in the output folder. It

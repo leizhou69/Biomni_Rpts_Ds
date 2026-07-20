@@ -104,6 +104,17 @@ def run_single_experiment(llm_name, llm_id, temperature, query_path, prompt, out
     # Configure agent
     default_config.temperature = temperature
     data_root = Path("./biomni_data_cache").resolve()
+
+    # Use the local data lake and skip all S3 downloads. Passing a non-None
+    # expected_data_lake_files makes A1 take its "skip datalake download" branch,
+    # so it never contacts biomni-release.s3.amazonaws.com. The lake at
+    # <data_root>/biomni_data/data_lake is already complete (76/76 files); the
+    # 403s in older runs were the custom DATA_FILES leaking into the shared
+    # data_lake_dict across experiments, not the real lake failing.
+    data_lake_dir = data_root / "biomni_data" / "data_lake"
+    local_data_lake_files = (
+        sorted(p.name for p in data_lake_dir.iterdir()) if data_lake_dir.is_dir() else []
+    )
     
     print(f"\n{'='*80}")
     print(f"Starting experiment: {QUERY_ID}_{llm_id}_Tmp{temperature}_{TIMEOUT_ID}")
@@ -128,7 +139,8 @@ def run_single_experiment(llm_name, llm_id, temperature, query_path, prompt, out
             agent = A1(
                 path=str(data_root),
                 llm=llm_name,
-                timeout_seconds=TIMEOUT_SECONDS
+                timeout_seconds=TIMEOUT_SECONDS,
+                expected_data_lake_files=local_data_lake_files,
             )
             
             # Register data files (use absolute paths)
