@@ -33,7 +33,7 @@ Status: **plan (no execution yet)** — review before running any step.
 OLD=/blue/zhou/leizhou/Agents/Biomni_Rpts_Ds        # current repo (becomes archive)
 FORK=/blue/zhou/leizhou/Agents/biomni-fork          # extracted patched Biomni
 PROJECT=/blue/zhou/leizhou/Agents/George         # new clean project repo
-DATA=/blue/zhou/leizhou/Agents/tnr_data             # neutral data root (optional relocation)
+                                                     # data lives at $PROJECT/data (moved in Phase 3, instant rename)
 ENV=biomni_e1                                        # conda env
 ```
 
@@ -64,8 +64,11 @@ George/                        # new clean project repo
   analysis/  pathogenic_repeat_analysis.ipynb  Candidate_Identification.ipynb ...
   manuscript/  5UTR_TNR_0605.pdf
   results/  Top_Candidate_Pathogenic_repeats.csv
-  data -> <DATA or OLD/Rpt_Ds/data>          # SYMLINK, never a copy
-  output/                        # fresh run outputs (new)
+  data/                          # moved here from OLD/Rpt_Ds/data (instant rename, same mount); gitignored
+    5UTR/  (+ future 3UTR, ...)  #   region source files
+    ag_db/                       #   DuckDB/Parquet backend (built Phase 4)
+  output/                        # fresh run outputs (new); gitignored
+
   archive/                       # optional: superseded notebooks/queries
 ```
 
@@ -113,10 +116,13 @@ then editable-install it so `import biomni` is unambiguous.
 - [ ] Copy keepers from `$OLD` into the new structure (harness, query_05_b.txt,
       ms/ → manuscript/, AG_DB_DESIGN.md → db/, active notebooks → analysis/,
       Top_Candidate…csv → results/, CLAUDE.md → adapt).
-- [ ] **Data symlink (safe default, zero risk):**
-      `ln -s $OLD/Rpt_Ds/data $PROJECT/data`
-      *(Optional relocation — instant on this mount — if you want data off the
-      archived repo: `mkdir -p $DATA && mv $OLD/Rpt_Ds/data/* $DATA/ && ln -s $DATA $PROJECT/data`.)*
+- [ ] **Move data into George** (instant rename — same `/blue/zhou` mount, NOT an
+      86 GB copy): `mv $OLD/Rpt_Ds/data $PROJECT/data`
+      - Verify first that the target doesn't exist and the mount matches
+        (`df -P $OLD/Rpt_Ds/data $PROJECT | awk 'NR>1{print $6,$1}'`).
+      - Reversible: `mv $PROJECT/data $OLD/Rpt_Ds/data`. `$OLD` is being archived,
+        so it losing its data dir is expected; backups also exist.
+      - George's data is now self-contained (no symlink, no dependency on `$OLD`).
 - [ ] Update paths in `run_biomni.py`: `DATA_FILES` and `data_root` to the new
       layout (`data/5UTR/...`, `data/ag_db`). Keep the corrected 5-entry DATA_FILES.
 - [ ] Copy `.env` (do **not** commit it).
@@ -155,8 +161,8 @@ Follow `db/AG_DB_DESIGN.md` §5/§9:
 - [ ] Tag it: `cd $OLD && git tag archive-pre-migration && git commit -am "Archive: superseded by George + biomni-fork"`.
 - [ ] Leave the 292 GB `Rpt_Ds/output` in place (historical provenance) unless you
       choose to prune separately.
-- ✅ Checkpoint: new project runs without touching `$OLD` except the data symlink
-      (or fully independent if data was relocated in Phase 3).
+- ✅ Checkpoint: George is **fully independent** of `$OLD` (its data now lives
+      under `$PROJECT/data`); `$OLD` can be archived without breaking George.
 
 ---
 
@@ -175,7 +181,7 @@ Follow `db/AG_DB_DESIGN.md` §5/§9:
 | `CompareOutput*.ipynb` (4 dated) | archive | stay in `$OLD` (archive) |
 | `verify_q05_*.md` (6), `verify_q05_*.csv` | archive | stay in `$OLD` |
 | `Top_Candidate_Pathogenic_repeats.csv` | keep | `$PROJECT/results/` |
-| `Rpt_Ds/data/5UTR/` (+ future 3UTR) | symlink/relocate | `$PROJECT/data` |
+| `Rpt_Ds/data/` (5UTR + future regions) | move (instant `mv`) | `$PROJECT/data/` |
 | `Rpt_Ds/output/` (292 GB) | leave archived | `$OLD` |
 | `Rpt_Ds/DoNotUse/`, `comparisons/`, one-off PNGs, `CCG_*`, `Verifying_keys.txt` | archive | stay in `$OLD` |
 | `tutorials/`, `figs/`, `test.ipynb`, `slurm-*.out` | drop | already deleted / not migrated |
@@ -183,8 +189,10 @@ Follow `db/AG_DB_DESIGN.md` §5/§9:
 ---
 
 ## Rollback & safety
-- Phases 1–3 are additive (clone/copy/symlink) — nothing in `$OLD` is destroyed;
-  abort by deleting `$FORK`/`$PROJECT`.
+- Phases 1–2 are additive (clone/copy) — abort by deleting `$FORK`/`$PROJECT`.
+- Phase 3's data step is a **rename** (`mv`), the one change to `$OLD` before
+  archival — reversible with `mv $PROJECT/data $OLD/Rpt_Ds/data`; backups also
+  exist. Copy keepers before the `mv` so a mistake never risks the data.
 - The only destructive step is **Phase 7** (delete TSVs), gated on Phase 6 parity
   and external backups. If parity fails, stop and keep TSVs.
 - If the editable install misbehaves, `pip uninstall biomni` and re-install; the

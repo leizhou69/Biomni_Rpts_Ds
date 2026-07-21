@@ -1,3 +1,8 @@
+<!-- ⚠️ ARCHIVED 2026-07-21 — superseded by George (/blue/zhou/leizhou/Agents/George,
+     https://github.com/leizhou69/George) + biomni-fork. Read-only for provenance.
+     See README_ARCHIVED.md. -->
+> ⚠️ **This repository is ARCHIVED** (2026-07-21) — superseded by **[George](https://github.com/leizhou69/George)** (project) and **biomni-fork** (patched Biomni). Kept read-only for provenance. See **[README_ARCHIVED.md](./README_ARCHIVED.md)**.
+
 <p align="center">
   <img src="./figs/biomni_logo.png" alt="Biomni Logo" width="600px" />
 </p>
